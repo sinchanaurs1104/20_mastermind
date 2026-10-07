@@ -92,12 +92,30 @@ class Mastermind:
     # ---------- actions ----------
 
     def validate(self, raw):
-        """Return the guess as a list of symbols, or raise ValueError."""
-        if len(raw) != self.code_length or any(ch not in self.symbols for ch in raw):
-            raise ValueError(
-                f"Enter exactly {self.code_length} digits from "
-                f"{self.symbols[0]} to {self.symbols[-1]}."
-            )
+        """Return the guess as a list of symbols, or raise ValueError.
+
+        The message says exactly what is wrong so the player can fix it.
+        """
+        rules = (f"{self.code_length} digits, each from "
+                 f"{self.symbols[0]} to {self.symbols[-1]}")
+        if not isinstance(raw, str):
+            raise ValueError(f"A guess must be text of {rules}.")
+        if raw == "":
+            raise ValueError(f"Empty guess. Enter {rules}.")
+
+        # Report bad characters first (each one only once, in order seen).
+        bad = []
+        for ch in raw:
+            if ch not in self.symbols and ch not in bad:
+                bad.append(ch)
+        if bad:
+            shown = ", ".join(repr(ch) for ch in bad)
+            raise ValueError(f"Invalid character(s): {shown}. Enter {rules}.")
+
+        if len(raw) != self.code_length:
+            raise ValueError(f"Your guess has {len(raw)} digit"
+                             f"{'s' if len(raw) != 1 else ''}; "
+                             f"enter exactly {rules}.")
         return list(raw)
 
     def make_guess(self, raw):
@@ -126,12 +144,23 @@ class Mastermind:
         if not self.is_over:
             self.status = self.QUIT
 
+    def format_history(self):
+        """Return the guess history as a readable table (a string)."""
+        if not self.history:
+            return "No guesses yet."
+        width = max(self.code_length, len("Guess"))
+        lines = [f"{'#':>3}  {'Guess':<{width}}  {'Exact':>5}  {'Partial':>7}",
+                 f"{'-' * 3}  {'-' * width}  {'-' * 5}  {'-' * 7}"]
+        for number, (guess, exact, partial) in enumerate(self.history, start=1):
+            lines.append(f"{number:>3}  {guess:<{width}}  {exact:>5}  {partial:>7}")
+        return "\n".join(lines)
+
     # ---------- terminal interface ----------
 
     def run(self):
         print(f"Mastermind ({self.difficulty}) — enter {self.code_length} digits "
               f"from {self.symbols[0]} to {self.symbols[-1]}. "
-              f"You have {self.max_turns} guesses. Type q to quit.")
+              f"You have {self.max_turns} guesses. Type h for history, q to quit.")
         while not self.is_over:
             try:
                 raw = input(f"{self.turns_left} turns left > ").strip()
@@ -141,12 +170,16 @@ class Mastermind:
             if raw.lower() == "q":
                 self.quit()
                 break
+            if raw.lower() in ("h", "history"):     # free: changes no state
+                print(self.format_history())
+                continue
             try:
                 exact, partial = self.make_guess(raw)
             except ValueError as err:
                 print(err)
                 continue
             print("Exact:", exact, " Partial:", partial)
+            print(self.format_history())
         self.show_result()
 
     def show_result(self):
