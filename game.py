@@ -1,13 +1,52 @@
 import random
+from collections import namedtuple
 from logic import feedback
 
-CODE_LENGTH = 4
-SYMBOLS = "123456"
-MAX_TURNS = 10
+# One difficulty = how long the code is, which symbols may appear in it,
+# and how many guesses the player gets. Symbols are single digit characters.
+Difficulty = namedtuple("Difficulty", "code_length symbols max_turns")
+
+DIFFICULTIES = {
+    "easy":   Difficulty(code_length=4, symbols="1234",     max_turns=12),
+    "medium": Difficulty(code_length=4, symbols="123456",   max_turns=10),
+    "hard":   Difficulty(code_length=5, symbols="12345678", max_turns=8),
+}
+DEFAULT_DIFFICULTY = "medium"
 
 
 class GameOverError(Exception):
     """Raised when someone tries to change the game after it has ended."""
+
+
+def describe(difficulty):
+    """Human-readable one-line summary of a difficulty, e.g. for menus."""
+    d = DIFFICULTIES[difficulty]
+    return (f"{d.code_length} digits from {d.symbols[0]} to {d.symbols[-1]}, "
+            f"{d.max_turns} guesses")
+
+
+def choose_difficulty():
+    """Show a menu and return a difficulty name, or None if the player quits.
+
+    Re-asks on bad input.
+    """
+    names = list(DIFFICULTIES)
+    by_number = {str(i): name for i, name in enumerate(names, start=1)}
+    print("Choose a difficulty:")
+    for number, name in by_number.items():
+        print(f"  {number}. {name:<7} {describe(name)}")
+    while True:
+        try:
+            raw = input("Difficulty (name or number, q to quit) > ").strip().lower()
+        except EOFError:
+            return None
+        if raw == "q":
+            return None
+        if raw in DIFFICULTIES:
+            return raw
+        if raw in by_number:
+            return by_number[raw]
+        print(f"Please enter one of: {', '.join(names)} (or 1-{len(names)}).")
 
 
 class Mastermind:
@@ -17,12 +56,26 @@ class Mastermind:
     LOST = "lost"
     QUIT = "quit"
 
-    def __init__(self, code=None, max_turns=MAX_TURNS):
+    def __init__(self, code=None, difficulty=DEFAULT_DIFFICULTY, max_turns=None):
         # `code` can be passed in so tests can use a known secret.
+        # `max_turns`, if given, overrides the difficulty's guess limit.
+        if difficulty not in DIFFICULTIES:
+            raise ValueError(f"Unknown difficulty {difficulty!r}. "
+                             f"Choose from: {', '.join(DIFFICULTIES)}.")
+        config = DIFFICULTIES[difficulty]
+        self.difficulty = difficulty
+        self.code_length = config.code_length
+        self.symbols = config.symbols
+        self.max_turns = config.max_turns if max_turns is None else max_turns
+
         if code is None:
-            code = [random.choice(SYMBOLS) for _ in range(CODE_LENGTH)]
+            code = [random.choice(self.symbols) for _ in range(self.code_length)]
         self.code = list(code)
-        self.max_turns = max_turns
+        if (len(self.code) != self.code_length
+                or any(ch not in self.symbols for ch in self.code)):
+            raise ValueError(f"Code {''.join(self.code)!r} does not fit the "
+                             f"{difficulty!r} difficulty.")
+
         self.history = []          # one (guess, exact, partial) per ACCEPTED guess
         self.status = self.PLAYING
 
@@ -40,10 +93,10 @@ class Mastermind:
 
     def validate(self, raw):
         """Return the guess as a list of symbols, or raise ValueError."""
-        if len(raw) != len(self.code) or any(ch not in SYMBOLS for ch in raw):
+        if len(raw) != self.code_length or any(ch not in self.symbols for ch in raw):
             raise ValueError(
-                f"Enter exactly {len(self.code)} digits from "
-                f"{SYMBOLS[0]} to {SYMBOLS[-1]}."
+                f"Enter exactly {self.code_length} digits from "
+                f"{self.symbols[0]} to {self.symbols[-1]}."
             )
         return list(raw)
 
@@ -62,7 +115,7 @@ class Mastermind:
 
         # Win is checked BEFORE the turn limit, so a correct guess on the
         # very last turn is a win, not a loss.
-        if exact == len(self.code):
+        if exact == self.code_length:
             self.status = self.WON
         elif self.turns_left == 0:
             self.status = self.LOST
@@ -76,8 +129,9 @@ class Mastermind:
     # ---------- terminal interface ----------
 
     def run(self):
-        print(f"Mastermind — enter {len(self.code)} digits from "
-              f"{SYMBOLS[0]} to {SYMBOLS[-1]}. Type q to quit.")
+        print(f"Mastermind ({self.difficulty}) — enter {self.code_length} digits "
+              f"from {self.symbols[0]} to {self.symbols[-1]}. "
+              f"You have {self.max_turns} guesses. Type q to quit.")
         while not self.is_over:
             try:
                 raw = input(f"{self.turns_left} turns left > ").strip()
